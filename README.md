@@ -15,9 +15,9 @@ This project is designed to read data from AWS Athena tables, perform transforma
 Before running the project, ensure the following:
 1. **AWS Credentials**: The system should have AWS credentials configured (via `aws configure` or IAM role).
 2. **Python Version**: Python 3.x is required.
-3. **Required Python Libraries**: Install the necessary dependencies using:
+3. **Required Python Libraries**: Install dependencies using:
    ```sh
-   pip install boto3 pandas pyyaml
+   pip install -r requirements.txt
    ```
 
 ## Configuration
@@ -51,7 +51,7 @@ aws-athena-data-pipeline/
 │── utils.py
 │── config.yaml
 │── process_data.py
-│── logger.py
+│── requirements.txt
 │── README.md
 ```
 
@@ -68,11 +68,7 @@ aws-athena-data-pipeline/
 - Reads Athena tables using the provided SQL queries.
 - Transforms the data by adding new columns or modifying existing ones.
 - Writes the processed data back to AWS S3.
-- Logs the entire process using `logger.py`.
-
-### 3. `logger.py`
-- Configures structured logging for both file and console output.
-- Helps in debugging and monitoring execution.
+- Implements structured logging directly within the script.
 
 ## Technologies Used
 - **AWS Athena**: Executes SQL queries on S3 data.
