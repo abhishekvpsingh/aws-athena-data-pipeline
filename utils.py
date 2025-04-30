@@ -4,6 +4,8 @@ import pandas as pd
 import yaml
 import os
 import datetime
+import time
+
 
 # Load Configuration
 def load_config(config_path="config.yaml"):
@@ -38,6 +40,36 @@ def query_athena(query, database, output_location, session=None):
     )
     return response["QueryExecutionId"]
 
+# Wait for Athena Query to Complete
+def wait_for_query_to_complete(client, execution_id, poll_interval=5):
+    print("Waiting for Athena query to complete...")
+    
+    while True:
+        status = client.get_query_execution(QueryExecutionId=execution_id)
+        query_status = status["QueryExecution"]["Status"]
+        state = query_status["State"]
+        
+        if state in ["SUCCEEDED", "FAILED", "CANCELLED"]:
+            print(f"Query completed with status: {state}")
+            
+            if state in ["FAILED", "CANCELLED"]:
+                reason = query_status.get("StateChangeReason", "No reason provided.")
+                print(f"Query failed or cancelled. Reason: {reason}")            
+            return state        
+        time.sleep(poll_interval)
+
+def to_dataframe(s3_client, execution_output_path):
+    # Parse bucket and key from full s3 path
+    path = execution_output_path.replace("s3://", "")
+    bucket = path.split("/")[0]
+    key = "/".join(path.split("/")[1:])
+
+    print(f"Reading result file from S3: s3://{bucket}/{key}")
+    obj = s3_client.get_object(Bucket=bucket, Key=key)
+    df = pd.read_csv(io.BytesIO(obj["Body"].read()))
+    print(f"Retrieved {len(df)} records from S3.")
+    return df
+
 # Read Athena Tables from Multiple Queries
 def read_athena_tables(query_files, database, output_location, session=None):
     all_dataframes = []
@@ -45,10 +77,25 @@ def read_athena_tables(query_files, database, output_location, session=None):
         query = read_sql_query(query_file)
         execution_id = query_athena(query, database, output_location, session)
         client = (session or boto3).client("athena")
-        result = client.get_query_results(QueryExecutionId=execution_id)
-        df = pd.DataFrame([row["Data"] for row in result["ResultSet"]["Rows"][1:]])
+
+        state = wait_for_query_to_complete(client, execution_id)
+        if state != "SUCCEEDED":
+            raise Exception(f"Athena query failed with status: {state}")
+
+        #This will get only 1000 records
+        #result = client.get_query_results(QueryExecutionId=execution_id)
+        #df = pd.DataFrame([row["Data"] for row in result["ResultSet"]["Rows"][1:]])
+
+        #This will get all records
+        execution = client.get_query_execution(QueryExecutionId=execution_id)
+        result_path = execution["QueryExecution"]["ResultConfiguration"]["OutputLocation"]
+
+        s3_client = session.client("s3")
+        df = to_dataframe(s3_client, result_path)
+
         all_dataframes.append(df)
     return all_dataframes
+    
 
 # Write Data to S3
 def write_to_s3(dataframe, bucket, key, file_format="csv", session=None):
